@@ -60,7 +60,7 @@ StripeConfiguration.ApiKey = "";
 #!csharp
 
 // Assign your Stripe account's secret key globally to make use of it in every request
-StripeConfiguration.ApiKey = "sk_test_51KZR8JLtgpEvKUOL5zD26yX3jbEbCv0eJFA4C8qZjvL4EhrYUX7Izm8KamPAlfZIfxJDV4n4V8w3SgCGB2Fdv3OO00A3t2c4Q6";
+StripeConfiguration.ApiKey = "";
 
 #!markdown
 

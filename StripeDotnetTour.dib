@@ -1,0 +1,294 @@
+#!markdown
+
+## Stripe.NET Interactive Notebook
+
+[Stripe](https://stripe.com) provides services to enable developers with the ability to integrate payment processing into their solutions in a secure and reliable way. For .NET Developers, the [Stripe.NET](https://www.nuget.org/packages/Stripe.net/) is the official supported client library for interacting with Stripe's APIs.
+
+In this interative notebook, we see how to get started with Stripe.NET and explore some of the built-in functionality for calling into Stripe's APIs.
+
+#!markdown
+
+### Setup your Stripe Account
+
+Before we get started with Stripe.NET, you'll need to [register](https://dashboard.stripe.com/register) for a free Stripe account. You'll at least need to provide a company name and country. For this exploration, activing your Stripe account will not be necessary and it should be in `test mode` the entire time. Until you're ready to process real payments, adding real banking inforation to your Stripe account will not be required either.
+
+You can find the toggle for `test mode` on the upper right side of the Stripe Dashboard.
+
+<img src="./assets/images/TestMode.png" height="175" width="600" alt="Test Mode Toggle" />
+
+#!markdown
+
+### Intall the NuGet package
+First, you'll need to install Stripe.NET in your project. With in a typical .NET project, you can use the dotnet CLI by running the following command:
+
+```shell
+> dotnet add package Stripe.net
+```
+
+Since we're in this lovely notebook, we'll use the `#r` directive
+```
+#r "nuget:Stripe.NET"
+```
+
+#!csharp
+
+// Install Stripe.NET
+#r "nuget:Stripe.NET"
+
+// Install Bogus for generating fake data
+#r "nuget:Bogus"
+
+#!csharp
+
+// Include usings
+using System.Linq;
+using System.Runtime.Serialization;
+using Stripe;
+using Bogus;
+
+#!markdown
+
+### Authenticating Stripe API Requests
+The Stripe uses API keys to authenticate requests to its API. The keys for your account can be managed in your Stripe Dashboard. Click on `Developers` in the upper right corner of the dashboard then choose `API Keys` in the left menu. You will be presented with a `Publishable` key and a `Secret` key that can be used in test mode only. Test mode secret keys have the prefix `sk_test_` and live mode secret keys have the prefix `sk_live_`. You can learn more about API keys in the Stripe [documentation](https://stripe.com/docs/keys#limiting-access-with-restricted-api-keys).
+
+To use your secret key for each request, assign it to StripeConfiguration.ApiKey and the .NET library will automatically include it in the request header.
+
+```csharp
+StripeConfiguration.ApiKey = "sk_test_51KZR8JLtgpEvKUOL5zD26yX3jbEbCv0eJFA4C8qZjvL4EhrYUX7Izm8KamPAlfZIfxJDV4n4V8w3SgCGB2Fdv3OO00A3t2c4Q6";
+```
+
+#!csharp
+
+// Assign your Stripe account's secret key globally to make use of it in every request
+StripeConfiguration.ApiKey = "";
+
+#!markdown
+
+## Products in Stripe
+[Products](https://stripe.com/docs/api/products) in Stripe represent specific offerings for your customers. For every variation of an item or service, a distinct product should be created in Stripe. Each product will be used in along with one or more [Prices](https://stripe.com/docs/api/prices) to configure pricing to be in Payment Links, Checkout, or Subscriptions.
+
+In Stripe.NET, the `ProductService` will be used to manage the products in a Stripe account.
+
+#!markdown
+
+### Creating Products
+To create a product a Product in Stripe, you will pass an instance of `ProductCreateOptions` to the `Create` method of `ProductService`.
+
+```csharp
+var options = new ProductCreateOptions
+{
+  Name = "Playstation 5",
+};
+var service = new ProductService();
+service.Create(options);
+```
+
+#!csharp
+
+// Generate Fake product data
+
+public record Product(string UniqueCode, string Name, string Description, string ImageUrl, decimal Price);
+
+public class ProductRecordFaker : Faker<Product>
+{
+   public ProductRecordFaker()
+   {
+      this.CustomInstantiator(_ => FormatterServices.GetUninitializedObject(typeof(Product)) as Product);
+      RuleFor(p => p.UniqueCode, f => f.Random.AlphaNumeric(7).ToUpper());
+      RuleFor(p => p.Name, f => f.Commerce.ProductName());
+      RuleFor(p => p.Description, f => $"This is such an awesome product made out of {f.Commerce.ProductMaterial()}");
+      RuleFor(p => p.ImageUrl, f => f.Image.PicsumUrl());
+      RuleFor(p => p.Price, f => Decimal.Parse(f.Commerce.Price(min:15, max:200)));
+   }
+}
+
+var productFaker = new ProductRecordFaker();
+var products = productFaker.Generate(10);
+products
+
+#!csharp
+
+// Create products using the generated fake data
+foreach(var product in products) {
+    
+    var options = new ProductCreateOptions
+    {
+        Name = product.Name,
+        Description = product.Description,
+        Images = new List<string>{ product.ImageUrl},
+        Shippable = true,
+        Metadata = new Dictionary <string, string>{
+            ["code"] = product.UniqueCode
+        }
+    };
+    
+    var service = new ProductService();
+    await service.CreateAsync(options);
+}
+
+#!markdown
+
+### Retrieving Products
+Using the `List` method of `ProductService` to return the available Products in the Stripe account. An instance of `ProductListOptions` is required to specify the query opptions.
+
+```csharp
+var options = new ProductListOptions
+{
+  Limit = 3,
+};
+var service = new ProductService();
+StripeList<Product> products = service.List(options);
+```
+
+The `List` method returns an instance of `StripeList` which has built in support for paging. The `HasMore` property on the list can be checked to know if more data remains.
+
+#!csharp
+
+var options = new ProductListOptions
+{
+  Limit = 3,
+  Active = true
+};
+var service = new ProductService();
+
+StripeList<Stripe.Product> productResults = await service.ListAsync(options);
+
+if(productResults.Any()) 
+{
+  while(true) 
+  {
+    // Print current batch
+    foreach(var product in productResults) {
+      Console.WriteLine($"{product.Name} => {product.Id}");
+    }
+
+    if(!productResults.HasMore) break;
+
+    options.StartingAfter = productResults.Data.Last().Id;
+    productResults =  await service.ListAsync(options);
+  }  
+}
+
+#!markdown
+
+When you want to retrieve a single product, you can use the `Get` method on `ProductService`. You'll have to provide it with the id for the product that was generated by Stripe.
+
+#!csharp
+
+// we'll use the last product id from previous cell
+var stripeProductId = productResults.Data.Last().Id;
+Console.WriteLine($"Getting Product => {stripeProductId}");
+var service = new ProductService();
+var retrievedProduct = await service.GetAsync(stripeProductId);
+retrievedProduct
+
+#!markdown
+
+## Working with Prices
+The Products we've added to the Stripe account thus far don't have any price data attached to them. Remember, every Stripe Product represents a single offering of that product. Every version, SKU, model, size, version of your product needs to be created as a unique Product in Stripe with a unique price per currency.
+
+**Prices** ins Stripes define the unit cost, currency, and billing interval for product purchases. Stripe Products help you track inventory, and Stripe Prices help you track payment terms. If there are different types of physical goods or levels of service, they should be represented by unique Products with their associated pricing per currency.
+
+We'll use the `PriceService` from Stripe.NET to create Prices in our Stripe account and associate them with existing Products.
+
+```csharp
+var options = new PriceCreateOptions
+{
+  UnitAmount = 2000,
+  Currency = "usd",  
+  Product = "prod_LG1vEV9WsNhEpS",
+};
+var service = new PriceService();
+service.Create(options);
+```
+
+#!csharp
+
+var productService = new ProductService();
+var options = new ProductListOptions {
+    Limit= 5
+};
+
+await foreach(var p in  productService.ListAutoPagingAsync(options)) {
+    var price = products.FirstOrDefault(prod => prod.UniqueCode == p.Metadata["code"])?.Price;
+        
+    if(price is not null) {
+        Console.WriteLine($"Setting price of {p.Metadata["code"]} to {price.Value}");
+        var priceOptions = new PriceCreateOptions
+        {
+            UnitAmountDecimal = price.Value * 100,
+            Currency = "usd",           
+            Product = p.Id,
+        };
+        var priceService = new PriceService();
+        priceService.Create(priceOptions);
+    }
+}
+
+#!markdown
+
+What if you wanted to create a price and associated product? The `PriceCreateOptions` has a `ProductData` property that allows you to set *some* Product properties.
+
+#!csharp
+
+// Let's generate a new product, but instead we'll create the price and the product using the PriceService
+var newFakeProduct = productFaker.Generate(1).Single();
+var priceLookupKey = "fakeProductKey";
+
+var priceOptions = new PriceCreateOptions
+{
+    UnitAmountDecimal = newFakeProduct.Price * 100,
+    Currency = "usd",
+    LookupKey = priceLookupKey,
+    ProductData = new(){
+        Name = newFakeProduct.Name,
+        Metadata = new Dictionary <string, string>{
+            ["code"] = newFakeProduct.UniqueCode
+        }
+        //TODO: How do I add a description, images
+    }
+};
+
+var priceService = new PriceService();
+await priceService.CreateAsync(priceOptions);
+
+#!markdown
+
+### Query for prices
+
+#!csharp
+
+// Look up prices using the Price lookup key
+var priceListOptions = new PriceListOptions 
+{ 
+    LookupKeys = new List<string>{ priceLookupKey}
+};
+var service = new PriceService();
+StripeList<Price> prices = service.List(priceListOptions);
+var fakeProductPrice = prices.Data.SingleOrDefault();
+fakeProductPrice
+
+#!csharp
+
+// Look up prices the product id
+var priceListOptions = new PriceListOptions 
+{ 
+    Product = productResults.Data.Last().Id
+};
+var service = new PriceService();
+StripeList<Price> prices = service.List(priceListOptions);
+var fakeProductPrice = prices.Data.SingleOrDefault();
+fakeProductPrice
+
+#!csharp
+
+// Update generated product with description and image
+
+var prodUpdate = new ProductUpdateOptions() {
+    Description = newFakeProduct.Description,
+    Shippable = true,
+    Images = new List<string> {newFakeProduct.ImageUrl}
+};
+var productService = new ProductService();
+
+await productService.UpdateAsync(fakeProductPrice.ProductId, prodUpdate);

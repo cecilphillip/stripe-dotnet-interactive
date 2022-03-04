@@ -14,7 +14,7 @@ Before we get started with Stripe.NET, you'll need to [register](https://dashboa
 
 You can find the toggle for `test mode` on the upper right side of the Stripe Dashboard.
 
-<img src="./assets/images/TestMode.png" height="175" width="600" alt="Test Mode Toggle" />
+<img src="../../assets/images/TestMode.png" height="175" width="600" alt="Test Mode Toggle" />
 
 #!markdown
 
@@ -54,13 +54,13 @@ The Stripe uses API keys to authenticate requests to its API. The keys for your 
 To use your secret key for each request, assign it to StripeConfiguration.ApiKey and the .NET library will automatically include it in the request header.
 
 ```csharp
-StripeConfiguration.ApiKey = "sk_test_51KZR8JLtgpEvKUOL5zD26yX3jbEbCv0eJFA4C8qZjvL4EhrYUX7Izm8KamPAlfZIfxJDV4n4V8w3SgCGB2Fdv3OO00A3t2c4Q6";
+StripeConfiguration.ApiKey = "";
 ```
 
 #!csharp
 
 // Assign your Stripe account's secret key globally to make use of it in every request
-StripeConfiguration.ApiKey = "";
+StripeConfiguration.ApiKey = "sk_test_51KZR8JLtgpEvKUOL5zD26yX3jbEbCv0eJFA4C8qZjvL4EhrYUX7Izm8KamPAlfZIfxJDV4n4V8w3SgCGB2Fdv3OO00A3t2c4Q6";
 
 #!markdown
 
@@ -189,6 +189,8 @@ The Products we've added to the Stripe account thus far don't have any price dat
 
 **Prices** ins Stripes define the unit cost, currency, and billing interval for product purchases. Stripe Products help you track inventory, and Stripe Prices help you track payment terms. If there are different types of physical goods or levels of service, they should be represented by unique Products with their associated pricing per currency.
 
+> **IMPORTANT** The `UnitAmount` and `UnitAmountDecimal` properties on a Price represent the amount cents to charge. If the price of a product is 10 dollars and 50 cents, the `UnitAmount` should be set to **1050**.
+
 We'll use the `PriceService` from Stripe.NET to create Prices in our Stripe account and associate them with existing Products.
 
 ```csharp
@@ -196,7 +198,7 @@ var options = new PriceCreateOptions
 {
   UnitAmount = 2000,
   Currency = "usd",  
-  Product = "prod_LG1vEV9WsNhEpS",
+  Product = "prod_123455",
 };
 var service = new PriceService();
 service.Create(options);
@@ -292,3 +294,38 @@ var prodUpdate = new ProductUpdateOptions() {
 var productService = new ProductService();
 
 await productService.UpdateAsync(fakeProductPrice.ProductId, prodUpdate);
+
+#!markdown
+
+## Collecting payments with Payment Links
+Now that the Stripe account has products and prices setup, the next set is to start collecting payments. One of the easiest ways to do that is with [Payment Links](https://stripe.com/payments/payment-links). With Payment Links,  you can quickly can create a payment page through the Stripe [Dashboard](https://stripe.com/docs/payments/payment-links#create-link) and share a link to it through any channel you wish. It requires no coding but they can also be created programmatically using the Payment Links API. That's what we'll do next.
+
+Stripe.NET provides the `PaymentLinkService` class to help manage Payment Links through code.
+
+#!csharp
+
+// Create a payment from existing prices 
+var priceListOptions = new PriceListOptions { Limit = 3 };
+
+var lineItems = new List<PaymentLinkLineItemOptions>();
+var priceService = new PriceService();
+
+foreach(var p in await priceService.ListAsync(priceListOptions)) {
+      lineItems.Add(new(){ Price = p.Id, Quantity = 1 });      
+}
+
+var plOptions = new PaymentLinkCreateOptions
+{
+  LineItems = lineItems,  // max 20 line items
+  PaymentMethodTypes = new List<string> { "card" }, // only card is supported today 
+  AllowPromotionCodes = true,
+  BillingAddressCollection = "required",
+  ShippingAddressCollection = new() {
+    AllowedCountries = new List<string> { "US", "CA", "MX"} //https://www.iban.com/country-codes https://stripe.com/global
+  }
+};
+
+var plService = new PaymentLinkService();
+var newPaymentLink = await plService.CreateAsync(plOptions);
+
+newPaymentLink.Url

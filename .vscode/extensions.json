@@ -1,6 +1,7 @@
 {
     "recommendations": [
         "Stripe.vscode-stripe",
-        "ms-dotnettools.vscode-dotnet-pack"
+        "ms-dotnettools.vscode-dotnet-pack",
+        "msrvida.vscode-sanddance"
     ]
 }

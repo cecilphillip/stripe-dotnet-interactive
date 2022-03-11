@@ -38,9 +38,6 @@ Since we're in this lovely notebook, we'll use the `#r` directive
 // Install Bogus for generating fake data
 #r "nuget:Bogus"
 
-#r "nuget:nteract.InteractiveExtension"
-#r "nuget:SandDance.InteractiveExtension"
-
 #!csharp
 
 // Include usings
@@ -48,6 +45,8 @@ using System.Linq;
 using System.Runtime.Serialization;
 using Stripe;
 using Bogus;
+
+using Microsoft.DotNet.Interactive.Formatting;
 using Microsoft.DotNet.Interactive.Formatting.TabularData;
 
 #!markdown
@@ -107,6 +106,9 @@ public class ProductRecordFaker : Faker<Product>
 
 var productFaker = new ProductRecordFaker();
 var products = productFaker.Generate(10);
+
+#!csharp
+
 products.ToTabularDataResource().Display();
 
 #!csharp
@@ -184,7 +186,7 @@ var stripeProductId = productResults.Data.Last().Id;
 Console.WriteLine($"Getting Product => {stripeProductId}");
 var service = new ProductService();
 var retrievedProduct = await service.GetAsync(stripeProductId);
-retrievedProduct
+retrievedProduct.ToJson()
 
 #!markdown
 
@@ -257,7 +259,11 @@ var priceOptions = new PriceCreateOptions
 };
 
 var priceService = new PriceService();
-await priceService.CreateAsync(priceOptions);
+var newPrice = await priceService.CreateAsync(priceOptions);
+
+#!csharp
+
+newPrice.ToJson()
 
 #!markdown
 
@@ -274,7 +280,7 @@ var priceListOptions = new PriceListOptions
 var service = new PriceService();
 StripeList<Price> prices = service.List(priceListOptions);
 var fakeProductPrice = prices.Data.SingleOrDefault();
-fakeProductPrice
+fakeProductPrice.ToJson()
 
 #!csharp
 
@@ -286,7 +292,7 @@ var priceListOptions = new PriceListOptions
 var service = new PriceService();
 StripeList<Price> prices = service.List(priceListOptions);
 var fakeProductPrice = prices.Data.SingleOrDefault();
-fakeProductPrice
+fakeProductPrice.ToJson()
 
 #!csharp
 
@@ -299,7 +305,8 @@ var prodUpdate = new ProductUpdateOptions() {
 };
 var productService = new ProductService();
 
-await productService.UpdateAsync(fakeProductPrice.ProductId, prodUpdate);
+var updatedProduct = await productService.UpdateAsync(fakeProductPrice.ProductId, prodUpdate);
+updatedProduct.ToJson()
 
 #!markdown
 
@@ -335,3 +342,133 @@ var plService = new PaymentLinkService();
 var newPaymentLink = await plService.CreateAsync(plOptions);
 
 newPaymentLink.Url
+
+#!markdown
+
+## Using Payment Elements
+If there's a need to create a customized user experince for payment collection [Stripe Elements](https://stripe.com/payments/elements) provides a collection of prebuilt UI components for building your web checkout workflow. Stripe Elements is a feature of the [Stripe.js](https://stripe.com/docs/js), a browerside library for securely collect sensitive payment details and interacting with Stripe's APIs.
+
+Stripe.js can loaded directly via a html script tag:
+```html
+ <script src="https://js.stripe.com/v3/"></script>
+```
+or via NPM
+
+```shell
+npm install @stripe/stripe-js
+```
+
+Before using Stripe Elements to collect payment, a [Payment Intent](https://stripe.com/docs/api/payment_intents) needs to be created in the backened then its associated client secret has to be provided to the frontend.
+> A **PaymentIntent** tracks the customer’s payment lifecycle, keeping track of any failed payment attempts and ensuring the customer is only charged once.
+
+#!csharp
+
+var options = new PaymentIntentCreateOptions
+{
+  Amount = 2000,
+  Currency = "usd",
+  PaymentMethodTypes = new List<string>
+  {
+    "card",
+  },
+};
+var service = new PaymentIntentService();
+var newPaymentIntent = await service.CreateAsync(options);
+
+#!markdown
+
+If you wish the iterate through the available payment intents on the current Stripe account, the `PaymentIntentService` has a `List` method just for that.
+
+#!csharp
+
+var piListOptions = new PaymentIntentListOptions
+{
+  Limit = 3,
+};
+var service = new PaymentIntentService();
+StripeList<PaymentIntent> paymentIntents = service.List(piListOptions);
+
+if(paymentIntents.Any()) 
+{
+  while(true) 
+  {
+    // Print current batch
+    foreach(var pi in paymentIntents) {
+      Console.WriteLine($"{pi.Id} => {pi.Amount} => {pi.Status}");
+    }
+
+    if(!paymentIntents.HasMore) break;
+
+    piListOptions.StartingAfter = paymentIntents.Data.Last().Id;
+    paymentIntents =  await service.ListAsync(piListOptions);
+  }  
+}
+
+#!csharp
+
+var clientSecret = newPaymentIntent.ClientSecret;
+$"Id => {newPaymentIntent.Id} Secret => {newPaymentIntent.ClientSecret}"
+
+#!markdown
+
+In the HTML of the checkout page, initialize the `Stripe` object with the [publishable key](https://stripe.com/docs/keys#obtain-api-keys) then create an [elements intance](https://stripe.com/docs/js/elements_object/create) using the client secret from the Payment Intent. After the element is created, it can be mounted to the respective HTML dom element.
+
+```javascript
+const paymentElement = elements.create("payment", {
+    business: {
+        name: "Llama Luxury"
+    }
+});
+paymentElement.mount("#payment-element");
+```
+
+#!html
+
+#!html
+<script src="https://js.stripe.com/v3/"></script>
+<section id="payment-form">
+    <div id="payment-element"></div>
+    <button id="btnsubmit" type="submit">        
+        <span id="button-text">Pay now</span>
+    </button>    
+</section>
+<br /> <hr />
+<span id="results">Results Placeholder</span>
+
+#!js
+#!share --from csharp clientSecret
+
+const stripe = Stripe("<Your Publishable Key>");
+elements = stripe.elements({ clientSecret });
+
+const paymentElement = elements.create("payment", {
+    business: {
+        name: "Llama Luxury"
+    }
+});
+paymentElement.mount("#payment-element");
+
+var resultsSpan = document.querySelector("#results");
+
+document.querySelector("#btnsubmit")
+    .addEventListener("click", handleSubmit);
+
+async function handleSubmit(e) {  
+  e.preventDefault();
+  resultsSpan.textContent = "running";
+  
+  try {
+    const paymentResult = await stripe.confirmPayment({
+      elements,
+      redirect: 'if_required',      
+    });
+    
+    // Handle result.error or result.paymentIntent
+    if(results.error)
+      resultsSpan.textContent = result.error.message;
+    
+      resultsSpan.textContent = paymentResult.paymentIntent.status;
+  } catch(error) {
+    resultsSpan.textContent = JSON.stringify(error);    
+  }
+}

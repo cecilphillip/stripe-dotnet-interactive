@@ -2,6 +2,6 @@
     "recommendations": [
         "Stripe.vscode-stripe",
         "ms-dotnettools.vscode-dotnet-pack",
-        "msrvida.vscode-sanddance"
+        "randomfractalsinc.vscode-data-table"
     ]
 }

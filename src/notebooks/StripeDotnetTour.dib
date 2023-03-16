@@ -1,10 +1,18 @@
+#!meta
+
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"aliases":["C#","c#"],"languageName":"C#","name":"csharp"},{"aliases":[],"languageName":"HTML","name":"html"},{"aliases":[],"languageName":"Mermaid","name":"mermaid"},{"aliases":["powershell"],"languageName":"PowerShell","name":"pwsh"},{"aliases":[],"name":"value"},{"aliases":["frontend"],"name":"vscode"}]}}
+
 #!markdown
 
-## Stripe.NET Interactive Notebook
+# Stripe .NET Interactive Notebook
 
 [Stripe](https://stripe.com) provides services to enable developers with the ability to integrate payment processing into their solutions in a secure and reliable way. For .NET Developers, the [Stripe.NET](https://www.nuget.org/packages/Stripe.net/) is the official supported client library for interacting with Stripe's APIs.
 
 In this interative notebook, we see how to get started with Stripe.NET and explore some of the built-in functionality for calling into Stripe's APIs.
+
+#!markdown
+
+## Getting Started
 
 #!markdown
 
@@ -18,7 +26,7 @@ You can find the toggle for `test mode` on the upper right side of the Stripe Da
 
 #!markdown
 
-### Intall the NuGet package
+### Install the NuGet package
 First, you'll need to install Stripe.NET in your project. With in a typical .NET project, you can use the dotnet CLI by running the following command:
 
 ```shell
@@ -36,18 +44,12 @@ Since we're in this lovely notebook, we'll use the `#r` directive
 #r "nuget:Stripe.NET"
 
 // Install Bogus for generating fake data
-#r "nuget:Bogus"
+#r "nuget:Bogus" 
 
 #!csharp
 
-// Include usings
-using System.Linq;
-using System.Runtime.Serialization;
 using Stripe;
 using Bogus;
-
-using Microsoft.DotNet.Interactive.Formatting;
-using Microsoft.DotNet.Interactive.Formatting.TabularData;
 
 #!markdown
 
@@ -63,7 +65,7 @@ StripeConfiguration.ApiKey = "";
 #!csharp
 
 // Assign your Stripe account's secret key globally to make use of it in every request
-StripeConfiguration.ApiKey = "";
+StripeConfiguration.ApiKey = await Kernel.GetPasswordAsync("Provide the Stripe account's secret key");
 
 #!markdown
 
@@ -377,7 +379,8 @@ var newPaymentIntent = await service.CreateAsync(options);
 
 #!markdown
 
-If you wish the iterate through the available payment intents on the current Stripe account, the `PaymentIntentService` has a `List` method just for that.
+### Listing available payment intents
+To iterate through the available payment intents on the current Stripe account, the `PaymentIntentService` has a `List` method just for that. If you're curious about the available properties, take a look at the [documentation for the PaymentIntent object](https://stripe.com/docs/api/payment_intents/object).
 
 #!csharp
 
@@ -404,6 +407,10 @@ if(paymentIntents.Any())
   }  
 }
 
+#!markdown
+
+Next we're going to store the `ClientSecret` value of that new PaymentIntent we just created.
+
 #!csharp
 
 var clientSecret = newPaymentIntent.ClientSecret;
@@ -411,7 +418,8 @@ $"Id => {newPaymentIntent.Id} Secret => {newPaymentIntent.ClientSecret}"
 
 #!markdown
 
-In the HTML of the checkout page, initialize the `Stripe` object with the [publishable key](https://stripe.com/docs/keys#obtain-api-keys) then create an [elements intance](https://stripe.com/docs/js/elements_object/create) using the client secret from the Payment Intent. After the element is created, it can be mounted to the respective HTML dom element.
+### Initializing Stripe Elements
+In the HTML of the checkout page, initialize the `Stripe` JavaScript object with the [publishable key](https://stripe.com/docs/keys#obtain-api-keys) then create an [elements intance](https://stripe.com/docs/js/elements_object/create) using the client secret from the Payment Intent. After the element is created, it can be mounted to the respective HTML dom element.
 
 ```javascript
 const paymentElement = elements.create("payment", {
@@ -424,7 +432,6 @@ paymentElement.mount("#payment-element");
 
 #!html
 
-#!html
 <script src="https://js.stripe.com/v3/"></script>
 <section id="payment-form">
     <div id="payment-element"></div>
@@ -435,10 +442,17 @@ paymentElement.mount("#payment-element");
 <br /> <hr />
 <span id="results">Results Placeholder</span>
 
-#!js
+#!markdown
+
+> **NOTE** In a real application, the client secret would be retrieved from the backend. This notebook doesn't have a 'backend' server, but we can share results between code blocks.
+
+We saved the ClientSecret from the `newPaymentIntent` instance. Next, we'll pass that value through to Stripe.js to initialize Stripe Elements.
+
+#!javascript
+
 #!share --from csharp clientSecret
 
-const stripe = Stripe("<Your Publishable Key>");
+const stripe = Stripe("pk_test_51KZR8JLtgpEvKUOLovBrbYh90WYyIU1ByfxcFL4tKeG7uZpQLxMvqcV3E4xNvVgN5d3ja2LwTBedmGl0euhUWeWs00UE9mmBzw");
 elements = stripe.elements({ clientSecret });
 
 const paymentElement = elements.create("payment", {
